@@ -182,8 +182,8 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
         api_key: process.env.TMDB_API_KEY,
         language: language,
         with_release_type: '2|3',
-        release_date.gte: new Date().toISOString().split('T')[0],
-        release_date.lte: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        'release_date.gte': new Date().toISOString().split('T')[0],
+        'release_date.lte': new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         sort_by: 'popularity.desc',
         page: page
       },
