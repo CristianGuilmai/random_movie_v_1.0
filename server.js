@@ -207,7 +207,9 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     const filteredResults = response.data.results.filter(movie => {
       if (!movie.release_date) return false;
       const releaseDate = new Date(movie.release_date);
-      return releaseDate > today; // Solo fechas posteriores a hoy
+      const todayStart = new Date(today);
+      todayStart.setHours(0, 0, 0, 0); // Resetear a inicio del día
+      return releaseDate >= todayStart; // Fechas >= hoy (incluyendo hoy)
     });
 
     console.log(`🎬 Películas encontradas: ${response.data.results.length}, filtradas: ${filteredResults.length}`);
