@@ -179,26 +179,24 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     console.log(`📄 Procesando página: ${page}`);
     
-    // Calcular fechas para filtros
+    // Calcular fechas para filtros (igual que la web de TMDB)
     const today = new Date();
     const minDate = today.toISOString().split('T')[0]; // Fecha mínima: hoy
-    const maxDate = new Date(today.getTime() + (2 * 365 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Fecha máxima: +2 años
+    const maxDate = new Date(today.getTime() + (120 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Fecha máxima: +4 meses (120 días)
     
     console.log(`📅 Filtros de fecha: ${minDate} a ${maxDate}`);
     
     // Usar endpoint /discover/movie con filtros específicos para próximos estrenos
+    // Replica exactamente los parámetros de la web de TMDB
     const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
       params: {
         api_key: process.env.TMDB_API_KEY,
-        // Sin filtro de idioma para obtener películas de cualquier idioma
+        language: 'es-ES',
         page: page,
-        // Filtros específicos para próximos estrenos
+        'with_release_type': '2|3', // Theatrical Limited | Theatrical
         'release_date.gte': minDate, // Fecha mínima: hoy
-        'release_date.lte': maxDate, // Fecha máxima: +2 años
-        'sort_by': 'popularity.desc', // Ordenar por popularidad
-        'include_adult': true, // Incluir contenido adulto
-        'include_video': false // Excluir videos (trailers)
-        // Sin filtros de tipo de lanzamiento ni mínimo de votos
+        'release_date.lte': maxDate, // Fecha máxima: +4 meses (120 días)
+        'sort_by': 'popularity.desc' // Ordenar por popularidad
       },
       timeout: 10000
     });
@@ -219,13 +217,12 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
       data: filteredResults,
       timestamp: new Date().toISOString(),
       filters_applied: {
-        language: 'cualquier idioma (sin filtro)',
-        release_types: 'todos (sin filtro)',
-        date_range: `${minDate} a ${maxDate}`,
+        language: 'es-ES',
+        release_types: '2|3 (Theatrical Limited | Theatrical)',
+        date_range: `${minDate} a ${maxDate} (+4 meses)`,
         sort_by: 'popularity.desc',
-        include_adult: true,
-        min_votes: 'sin mínimo',
-        server_filter: 'Solo fechas futuras'
+        server_filter: 'Solo fechas futuras',
+        note: 'Replica parámetros de la web de TMDB'
       }
     });
 
