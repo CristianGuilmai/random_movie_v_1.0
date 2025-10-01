@@ -621,6 +621,9 @@ app.post('/api/recommendations', validateAppSignature, async (req, res) => {
     }
 
     console.log(`🤖 Generando recomendaciones tipo: ${type}`);
+    console.log(`📝 Preferencias: ${userPreferences}`);
+    console.log(`📊 Películas calificadas: ${ratedMovies.length}`);
+    console.log(`📺 Películas vistas: ${watchedMovies.length}`);
 
     // Construir prompt para Groq
     let prompt = '';
@@ -655,6 +658,14 @@ app.post('/api/recommendations', validateAppSignature, async (req, res) => {
       },
       timeout: 15000
     });
+
+    console.log(`✅ Respuesta de Groq recibida: ${groqResponse.status}`);
+    console.log(`📄 Contenido: ${JSON.stringify(groqResponse.data)}`);
+
+    // Verificar que la respuesta de Groq sea válida
+    if (!groqResponse.data || !groqResponse.data.choices || !groqResponse.data.choices[0]) {
+      throw new Error('Respuesta inválida de Groq API');
+    }
 
     const recommendations = groqResponse.data.choices[0].message.content
       .split(',')
