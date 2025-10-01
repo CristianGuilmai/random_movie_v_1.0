@@ -205,7 +205,6 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     });
 
     // Filtrar adicionalmente en el servidor para asegurar solo fechas futuras
-    const today = new Date();
     const filteredResults = response.data.results.filter(movie => {
       if (!movie.release_date) return false;
       const releaseDate = new Date(movie.release_date);
