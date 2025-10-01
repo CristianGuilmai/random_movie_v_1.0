@@ -162,7 +162,7 @@ app.get('/api/movies/trending', validateAppSignature, async (req, res) => {
   }
 });
 
-// Endpoint para próximos estrenos (upcoming) - RUTA ESPECÍFICA
+// Endpoint para próximos estrenos (upcoming) - USANDO DISCOVER CON FILTROS ESPECÍFICOS
 app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
   try {
     console.log('✅ Endpoint upcoming accedido');
@@ -179,19 +179,43 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     console.log(`📄 Procesando página: ${page}`);
     
-    const response = await axios.get('https://api.themoviedb.org/3/movie/upcoming', {
+    // Calcular fechas para filtros
+    const today = new Date();
+    const minDate = today.toISOString().split('T')[0]; // Fecha mínima: hoy
+    const maxDate = new Date(today.getTime() + (365 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Fecha máxima: +1 año
+    
+    console.log(`📅 Filtros de fecha: ${minDate} a ${maxDate}`);
+    
+    // Usar endpoint /discover/movie con filtros específicos para próximos estrenos
+    const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
       params: {
         api_key: process.env.TMDB_API_KEY,
         language: 'es-ES',
-        page: page
+        page: page,
+        // Filtros específicos para próximos estrenos
+        'with_release_type': '2|3', // Tipos de lanzamiento: teatral (2) y digital (3)
+        'release_date.gte': minDate, // Fecha mínima: hoy
+        'release_date.lte': maxDate, // Fecha máxima: +1 año
+        'sort_by': 'popularity.desc', // Ordenar por popularidad
+        'include_adult': false, // Excluir contenido adulto
+        'include_video': false, // Excluir videos (trailers)
+        'vote_count.gte': 10 // Mínimo 10 votos para calidad
       },
       timeout: 10000
     });
 
+    console.log(`🎬 Películas próximas encontradas: ${response.data.results.length}`);
+
     res.json({
       success: true,
       data: response.data.results,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      filters_applied: {
+        release_types: '2|3 (teatral y digital)',
+        date_range: `${minDate} a ${maxDate}`,
+        sort_by: 'popularity.desc',
+        min_votes: 10
+      }
     });
 
   } catch (error) {
@@ -430,6 +454,245 @@ app.get('/api/watch-providers/regions', validateAppSignature, async (req, res) =
     res.status(500).json({ 
       error: 'Error interno del servidor',
       code: 'REGIONS_ERROR'
+    });
+  }
+});
+
+// Endpoint para búsqueda de películas
+app.post('/api/movies/search', validateAppSignature, async (req, res) => {
+  try {
+    const { query, language = 'es-ES', page = 1 } = req.body;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Query de búsqueda requerida',
+        code: 'MISSING_QUERY'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🔍 Buscando: "${query}" (página ${page})`);
+
+    const response = await axios.get('https://api.themoviedb.org/3/search/movie', {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language,
+        query: query,
+        page: page,
+        include_adult: false
+      },
+      timeout: 10000
+    });
+
+    res.json({
+      success: true,
+      data: {
+        results: response.data.results,
+        total_pages: response.data.total_pages,
+        total_results: response.data.total_results,
+        page: response.data.page
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error en búsqueda:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'SEARCH_ERROR'
+    });
+  }
+});
+
+// Endpoint para película aleatoria
+app.post('/api/movies/random', validateAppSignature, async (req, res) => {
+  try {
+    const { 
+      genres, 
+      language = 'es-ES', 
+      yearStart, 
+      yearEnd, 
+      minVotes = 50, 
+      minRating, 
+      maxRating, 
+      excludeAdult = true 
+    } = req.body;
+
+    if (!genres || !Array.isArray(genres) || genres.length === 0) {
+      return res.status(400).json({
+        error: 'Géneros requeridos',
+        code: 'MISSING_GENRES'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎲 Película aleatoria para géneros: ${genres.join(',')}`);
+
+    // Construir parámetros de búsqueda
+    const params = {
+      api_key: process.env.TMDB_API_KEY,
+      language: language,
+      with_genres: genres.join(','),
+      sort_by: 'popularity.desc',
+      vote_count.gte: minVotes,
+      include_adult: excludeAdult ? 'false' : 'true'
+    };
+
+    // Filtros de fecha
+    if (yearStart && yearStart > 1900) {
+      params['primary_release_date.gte'] = `${yearStart}-01-01`;
+    }
+    
+    const currentYear = new Date().getFullYear();
+    const safeYearEnd = (yearEnd && yearEnd <= currentYear) ? yearEnd : currentYear;
+    params['primary_release_date.lte'] = `${safeYearEnd}-12-31`;
+
+    // Filtros de puntuación
+    if (minRating !== undefined) {
+      params['vote_average.gte'] = minRating;
+    }
+    if (maxRating !== undefined) {
+      params['vote_average.lte'] = maxRating;
+    }
+
+    // Obtener página aleatoria (máximo 20 páginas)
+    const randomPage = Math.floor(Math.random() * 20) + 1;
+    params.page = randomPage;
+
+    const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
+      params: params,
+      timeout: 10000
+    });
+
+    const results = response.data.results || [];
+    
+    if (results.length === 0) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No se encontraron películas con los criterios especificados',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Seleccionar película aleatoria de los resultados
+    const randomMovie = results[Math.floor(Math.random() * results.length)];
+
+    res.json({
+      success: true,
+      data: randomMovie,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error en película aleatoria:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'RANDOM_MOVIE_ERROR'
+    });
+  }
+});
+
+// Endpoint para recomendaciones de IA
+app.post('/api/recommendations', validateAppSignature, async (req, res) => {
+  try {
+    const { 
+      userPreferences, 
+      ratedMovies = [], 
+      watchedMovies = [], 
+      type = 'preferences' 
+    } = req.body;
+
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de Groq no configurada',
+        code: 'GROQ_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🤖 Generando recomendaciones tipo: ${type}`);
+
+    // Construir prompt para Groq
+    let prompt = '';
+    
+    if (type === 'preferences' && userPreferences) {
+      prompt = `Basándome en estas preferencias del usuario: "${userPreferences}", recomiéndame 5 películas específicas con títulos exactos. Responde solo con los títulos separados por comas.`;
+    } else if (type === 'ratings' && ratedMovies.length > 0) {
+      const movieTitles = ratedMovies.map(m => m.title || m.name).join(', ');
+      prompt = `Basándome en estas películas que el usuario ha calificado: "${movieTitles}", recomiéndame 5 películas similares con títulos exactos. Responde solo con los títulos separados por comas.`;
+    } else {
+      return res.status(400).json({
+        error: 'Datos insuficientes para generar recomendaciones',
+        code: 'INSUFFICIENT_DATA'
+      });
+    }
+
+    // Llamar a Groq API
+    const groqResponse = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+      model: 'llama3-8b-8192',
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 200
+    }, {
+      headers: {
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
+    });
+
+    const recommendations = groqResponse.data.choices[0].message.content
+      .split(',')
+      .map(title => title.trim())
+      .filter(title => title.length > 0);
+
+    res.json({
+      success: true,
+      data: recommendations,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error en recomendaciones:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'RECOMMENDATIONS_ERROR'
+    });
+  }
+});
+
+// Endpoint para obtener signature dinámico
+app.get('/api/signature', (req, res) => {
+  try {
+    const signature = process.env.APP_SIGNATURE || 'randomovie_2024_secure_signature';
+    
+    res.json({
+      success: true,
+      signature: signature,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error obteniendo signature:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'SIGNATURE_ERROR'
     });
   }
 });
