@@ -1098,6 +1098,348 @@ Responde SOLO en JSON válido.`
   }
 });
 
+// ===== ENDPOINTS PARA BÚSQUEDA DE PERSONAS =====
+
+// Endpoint para búsqueda de personas (actores, directores)
+app.post('/api/people/search', validateAppSignature, async (req, res) => {
+  try {
+    const { query, language = 'es-ES', page = 1 } = req.body;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Query de búsqueda requerida',
+        code: 'MISSING_QUERY'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🔍 Buscando persona: "${query}"`);
+
+    const response = await axios.get('https://api.themoviedb.org/3/search/person', {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language,
+        query: query,
+        page: page,
+        include_adult: false
+      },
+      timeout: 10000
+    });
+
+    res.json({
+      success: true,
+      data: {
+        results: response.data.results,
+        total_pages: response.data.total_pages,
+        total_results: response.data.total_results,
+        page: response.data.page
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error en búsqueda de personas:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'PEOPLE_SEARCH_ERROR'
+    });
+  }
+});
+
+// Endpoint para obtener películas de una persona (actor/director)
+app.get('/api/people/:id/movies', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES' } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de persona inválido' 
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎬 Obteniendo películas de persona ID: ${id}`);
+
+    // Obtener créditos de la persona
+    const response = await axios.get(`https://api.themoviedb.org/3/person/${id}/movie_credits`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    // Combinar cast y crew, eliminar duplicados
+    const movies = new Map();
+    
+    // Agregar películas donde actuó
+    if (response.data.cast) {
+      response.data.cast.forEach(movie => {
+        if (!movies.has(movie.id)) {
+          movies.set(movie.id, {
+            ...movie,
+            role: 'actor',
+            character: movie.character
+          });
+        }
+      });
+    }
+
+    // Agregar películas donde fue parte del crew (director, etc.)
+    if (response.data.crew) {
+      response.data.crew.forEach(movie => {
+        if (!movies.has(movie.id)) {
+          movies.set(movie.id, {
+            ...movie,
+            role: movie.job,
+            department: movie.department
+          });
+        }
+      });
+    }
+
+    // Convertir a array y ordenar por popularidad
+    const moviesList = Array.from(movies.values())
+      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+      .slice(0, 50); // Máximo 50 películas
+
+    console.log(`✅ Encontradas ${moviesList.length} películas`);
+
+    res.json({
+      success: true,
+      data: moviesList,
+      count: moviesList.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo películas de persona:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'PERSON_MOVIES_ERROR'
+    });
+  }
+});
+
+// Endpoint para obtener detalles de una persona
+app.get('/api/people/:id', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES' } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de persona inválido' 
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`👤 Obteniendo detalles de persona ID: ${id}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/person/${id}`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    res.json({
+      success: true,
+      data: response.data,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo detalles de persona:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'PERSON_DETAILS_ERROR'
+    });
+  }
+});
+
+// Endpoint para búsqueda inteligente con corrección de texto
+app.post('/api/search/intelligent', validateAppSignature, async (req, res) => {
+  try {
+    const { query, language = 'es-ES' } = req.body;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({
+        error: 'Query de búsqueda requerida',
+        code: 'MISSING_QUERY'
+      });
+    }
+
+    if (!process.env.GROQ_API_KEY || !process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API keys no configuradas',
+        code: 'API_KEYS_MISSING'
+      });
+    }
+
+    console.log(`🤖 Búsqueda inteligente: "${query}"`);
+
+    // 1. Analizar con Groq
+    const groqResponse = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          {
+            role: 'system',
+            content: `Eres un experto en cine. Analiza la búsqueda del usuario y determina:
+1. Tipo: "movie", "actor", "director" o "genre"
+2. Nombre correcto EN INGLÉS (para TMDB)
+3. Explicación amigable en español
+
+Ejemplos:
+- "hombre que nace viejo" → {"type":"movie","corrected":"The Curious Case of Benjamin Button","explanation":"¿Te refieres a 'El Curioso Caso de Benjamin Button'?"}
+- "joni dip" → {"type":"actor","corrected":"Johnny Depp","explanation":"¿Te refieres a Johnny Depp?"}
+- "kenu revs" → {"type":"actor","corrected":"Keanu Reeves","explanation":"¿Te refieres a Keanu Reeves?"}
+- "soldado ryan" → {"type":"movie","corrected":"Saving Private Ryan","explanation":"¿Te refieres a 'Rescatando al Soldado Ryan'?"}
+- "spielber" → {"type":"director","corrected":"Steven Spielberg","explanation":"¿Te refieres a Steven Spielberg?"}
+- "cristopher nolan" → {"type":"director","corrected":"Christopher Nolan","explanation":"¿Te refieres a Christopher Nolan?"}
+
+IMPORTANTE:
+- Nombres de películas SIEMPRE en inglés
+- Nombres de personas SIEMPRE en inglés
+- Explicación SIEMPRE en español
+- Sé tolerante con errores ortográficos graves
+
+Responde SOLO en JSON válido sin markdown ni formato adicional:
+{"type":"...","corrected":"...","explanation":"..."}`
+          },
+          {
+            role: 'user',
+            content: query
+          }
+        ],
+        temperature: 0.3,
+        max_completion_tokens: 200
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
+
+    let analysis;
+    try {
+      const content = groqResponse.data.choices[0].message.content.trim();
+      const cleanContent = content.replace(/```json|```/g, '').trim();
+      analysis = JSON.parse(cleanContent);
+    } catch (e) {
+      console.error('Error parseando respuesta de Groq:', e);
+      return res.status(500).json({
+        error: 'Error procesando análisis',
+        code: 'GROQ_PARSE_ERROR'
+      });
+    }
+
+    console.log('🎯 Análisis:', analysis);
+
+    // 2. Buscar en TMDB según el tipo
+    let results = [];
+    let searchType = analysis.type || 'movie';
+
+    if (searchType === 'actor' || searchType === 'director') {
+      // Buscar persona
+      const personSearch = await axios.get('https://api.themoviedb.org/3/search/person', {
+        params: {
+          api_key: process.env.TMDB_API_KEY,
+          language: language,
+          query: analysis.corrected,
+          include_adult: false
+        },
+        timeout: 10000
+      });
+
+      if (personSearch.data.results && personSearch.data.results.length > 0) {
+        const personId = personSearch.data.results[0].id;
+        
+        // Obtener películas de la persona
+        const creditsResponse = await axios.get(`https://api.themoviedb.org/3/person/${personId}/movie_credits`, {
+          params: {
+            api_key: process.env.TMDB_API_KEY,
+            language: language
+          },
+          timeout: 10000
+        });
+
+        // Combinar cast y crew según el tipo
+        if (searchType === 'actor') {
+          results = creditsResponse.data.cast || [];
+        } else {
+          // Para directores, filtrar solo trabajos de dirección
+          const crewMovies = creditsResponse.data.crew || [];
+          results = crewMovies.filter(movie => movie.job === 'Director');
+        }
+
+        // Ordenar por popularidad
+        results.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+      }
+    } else {
+      // Buscar película
+      const movieSearch = await axios.get('https://api.themoviedb.org/3/search/movie', {
+        params: {
+          api_key: process.env.TMDB_API_KEY,
+          language: language,
+          query: analysis.corrected,
+          include_adult: false
+        },
+        timeout: 10000
+      });
+
+      results = movieSearch.data.results || [];
+    }
+
+    console.log(`✅ Encontrados ${results.length} resultados`);
+
+    res.json({
+      success: true,
+      data: {
+        correctedQuery: analysis.corrected,
+        explanation: analysis.explanation || `¿Te refieres a "${analysis.corrected}"?`,
+        type: searchType,
+        results: results.slice(0, 50), // Máximo 50 resultados
+        count: results.length
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error en búsqueda inteligente:', error.message);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'INTELLIGENT_SEARCH_ERROR',
+      details: error.message
+    });
+  }
+});
+
 process.on('SIGINT', () => {
   console.log('🛑 Recibida señal SIGINT, cerrando servidor...');
   server.close(() => {
