@@ -190,11 +190,11 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
       params: {
         api_key: process.env.TMDB_API_KEY,
-        language: 'es-ES',
+        // Sin filtro de idioma para obtener películas de cualquier idioma
         page: page,
         // Filtros específicos para próximos estrenos
         'release_date.gte': minDate, // Fecha mínima: hoy
-        'release_date.lte': maxDate, // Fecha máxima: +1 año
+        'release_date.lte': maxDate, // Fecha máxima: +2 años
         'sort_by': 'popularity.desc', // Ordenar por popularidad
         'include_adult': true, // Incluir contenido adulto
         'include_video': false // Excluir videos (trailers)
@@ -217,6 +217,7 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
       data: filteredResults,
       timestamp: new Date().toISOString(),
       filters_applied: {
+        language: 'cualquier idioma (sin filtro)',
         release_types: 'todos (sin filtro)',
         date_range: `${minDate} a ${maxDate}`,
         sort_by: 'popularity.desc',
