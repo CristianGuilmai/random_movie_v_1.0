@@ -201,27 +201,17 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
       timeout: 10000
     });
 
-    // Filtrar adicionalmente en el servidor para asegurar solo fechas futuras
-    const filteredResults = response.data.results.filter(movie => {
-      if (!movie.release_date) return false;
-      const releaseDate = new Date(movie.release_date);
-      const todayStart = new Date(today);
-      todayStart.setHours(0, 0, 0, 0); // Resetear a inicio del día
-      return releaseDate >= todayStart; // Fechas >= hoy (incluyendo hoy)
-    });
-
-    console.log(`🎬 Películas encontradas: ${response.data.results.length}, filtradas: ${filteredResults.length}`);
+    console.log(`🎬 Películas encontradas: ${response.data.results.length}`);
 
     res.json({
       success: true,
-      data: filteredResults,
+      data: response.data.results, // Usar resultados directos de TMDB
       timestamp: new Date().toISOString(),
       filters_applied: {
         language: 'es-ES',
         release_types: '2|3 (Theatrical Limited | Theatrical)',
         date_range: `${minDate} a ${maxDate} (+4 meses)`,
         sort_by: 'popularity.desc',
-        server_filter: 'Solo fechas futuras',
         note: 'Replica parámetros de la web de TMDB'
       }
     });
