@@ -182,7 +182,7 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     // Calcular fechas para filtros
     const today = new Date();
     const minDate = today.toISOString().split('T')[0]; // Fecha mínima: hoy
-    const maxDate = new Date(today.getTime() + (365 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Fecha máxima: +1 año
+    const maxDate = new Date(today.getTime() + (2 * 365 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0]; // Fecha máxima: +2 años
     
     console.log(`📅 Filtros de fecha: ${minDate} a ${maxDate}`);
     
