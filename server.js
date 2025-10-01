@@ -777,6 +777,66 @@ process.on('SIGTERM', () => {
   });
 });
 
+// Endpoint para análisis de chat
+app.post('/api/chat/analyze', validateAppSignature, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de Groq no configurada',
+        code: 'GROQ_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🤖 Analizando mensaje del chat: ${message}`);
+
+    // Llamar a Groq API para análisis
+    const groqResponse = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          {
+            role: 'system',
+            content: 'Eres CineBot 🎬, un experto en cine. Tu tarea es analizar lo que escribe el usuario y ayudarle a encontrar películas, actores o directores, aunque escriba mal los nombres.\n\nResponde SOLO con uno de estos tipos:\n- "actor: [nombre corregido]"\n- "director: [nombre corregido]"\n- "movie: [título corregido]"\n- "unknown: [mensaje]"\n\nReglas criticas:\n1. Si el nombre está mal escrito, corrígelo (ej: "kenu revs" → "actor: Keanu Reeves").\n2. Si el usuario recuerda solo parte de un título ("matrix 1999" o "matrx"), intenta inferirlo y corrígelo.\n3. Si no entiendes, responde con "unknown: No entendí bien tu búsqueda".\n4. No hagas preguntas en las respuestas\n\nEjemplos:\n- "kenu revs" → "actor: Keanu Reeves"\n- "cristopher nolan" → "director: Christopher Nolan"\n- "incepton film" → "movie: Inception"\n- "busco una peli con un sueño compartido" → "movie: Inception"'
+          },
+          {
+            role: 'user',
+            content: message
+          }
+        ],
+        temperature: 0.7,
+        max_completion_tokens: 100,
+        top_p: 1,
+        stream: false
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    const analysis = groqResponse.data.choices[0].message.content.trim();
+
+    res.json({
+      success: true,
+      analysis: analysis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error en análisis de chat:', error.message);
+    res.status(500).json({
+      error: 'Error al analizar el mensaje',
+      code: 'CHAT_ANALYSIS_ERROR'
+    });
+  }
+});
+
 process.on('SIGINT', () => {
   console.log('🛑 Recibida señal SIGINT, cerrando servidor...');
   server.close(() => {
@@ -784,4 +844,3 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
-
