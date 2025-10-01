@@ -193,13 +193,12 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
         language: 'es-ES',
         page: page,
         // Filtros específicos para próximos estrenos
-        'with_release_type': '1|2|3|4|5|6', // Todos los tipos de lanzamiento (teatral, digital, TV, etc.)
         'release_date.gte': minDate, // Fecha mínima: hoy
         'release_date.lte': maxDate, // Fecha máxima: +1 año
         'sort_by': 'popularity.desc', // Ordenar por popularidad
         'include_adult': true, // Incluir contenido adulto
         'include_video': false // Excluir videos (trailers)
-        // Sin mínimo de votos
+        // Sin filtros de tipo de lanzamiento ni mínimo de votos
       },
       timeout: 10000
     });
@@ -218,7 +217,7 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
       data: filteredResults,
       timestamp: new Date().toISOString(),
       filters_applied: {
-        release_types: '1|2|3|4|5|6 (todas las plataformas)',
+        release_types: 'todos (sin filtro)',
         date_range: `${minDate} a ${maxDate}`,
         sort_by: 'popularity.desc',
         include_adult: true,
