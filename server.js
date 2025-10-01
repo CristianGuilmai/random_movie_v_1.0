@@ -603,7 +603,8 @@ app.post('/api/movies/random', validateAppSignature, async (req, res) => {
   }
 });
 
-// Endpoint para recomendaciones de IA
+
+// Endpoint para recomendaciones de IA - CORREGIDO
 app.post('/api/recommendations', validateAppSignature, async (req, res) => {
   try {
     const { 
@@ -625,14 +626,24 @@ app.post('/api/recommendations', validateAppSignature, async (req, res) => {
     console.log(`📊 Películas calificadas: ${ratedMovies.length}`);
     console.log(`📺 Películas vistas: ${watchedMovies.length}`);
 
-    // Construir prompt para Groq
-    let prompt = '';
+    // Construir prompt mejorado para Groq
+    let systemPrompt = 'Eres un experto en recomendaciones de películas. Debes responder SOLO con una lista de títulos de películas separados por comas, sin numeración, sin explicaciones, sin texto adicional.';
+    let userPrompt = '';
     
     if (type === 'preferences' && userPreferences) {
-      prompt = `Basándome en estas preferencias del usuario: "${userPreferences}", recomiéndame 5 películas específicas con títulos exactos. Responde solo con los títulos separados por comas.`;
+      userPrompt = `Basándote en estas preferencias: "${userPreferences}", recomienda exactamente 5 películas. Responde SOLO con los títulos separados por comas.`;
     } else if (type === 'ratings' && ratedMovies.length > 0) {
-      const movieTitles = ratedMovies.map(m => m.title || m.name).join(', ');
-      prompt = `Basándome en estas películas que el usuario ha calificado: "${movieTitles}", recomiéndame 5 películas similares con títulos exactos. Responde solo con los títulos separados por comas.`;
+      const movieTitles = ratedMovies
+        .map(m => `"${m.title || m.name}"`)
+        .slice(0, 10) // Limitar a 10 películas para no exceder el límite de tokens
+        .join(', ');
+      userPrompt = `Basándote en que al usuario le gustaron estas películas: ${movieTitles}, recomienda exactamente 5 películas similares. Responde SOLO con los títulos separados por comas.`;
+    } else if (type === 'watched' && watchedMovies.length > 0) {
+      const movieTitles = watchedMovies
+        .map(m => `"${m.title || m.name}"`)
+        .slice(0, 10)
+        .join(', ');
+      userPrompt = `El usuario ha visto estas películas: ${movieTitles}. Recomienda exactamente 5 películas que podrían gustarle. Responde SOLO con los títulos separados por comas.`;
     } else {
       return res.status(400).json({
         error: 'Datos insuficientes para generar recomendaciones',
@@ -640,101 +651,88 @@ app.post('/api/recommendations', validateAppSignature, async (req, res) => {
       });
     }
 
-    // Llamar a Groq API
-    const groqResponse = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama3-8b-8192',
-      messages: [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 200
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json'
+    console.log(`🎯 Prompt enviado a Groq: ${userPrompt}`);
+
+    // Llamar a Groq API con parámetros correctos
+    const groqResponse = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.3-70b-versatile', // Modelo actualizado y recomendado
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: userPrompt
+          }
+        ],
+        temperature: 0.7,
+        max_completion_tokens: 300, // Parámetro correcto (antes max_tokens)
+        top_p: 1,
+        stream: false
       },
-      timeout: 15000
-    });
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000 // Aumentado a 30 segundos
+      }
+    );
+
+    console.log(`✅ Respuesta de Groq recibida`);
 
     // Verificar que la respuesta de Groq sea válida
     if (!groqResponse.data || !groqResponse.data.choices || !groqResponse.data.choices[0]) {
+      console.error('❌ Respuesta inválida de Groq:', groqResponse.data);
       throw new Error('Respuesta inválida de Groq API');
     }
 
-    const recommendations = groqResponse.data.choices[0].message.content
+    const content = groqResponse.data.choices[0].message.content.trim();
+    console.log(`📝 Contenido recibido de Groq: "${content}"`);
+
+    // Procesar las recomendaciones
+    const recommendations = content
       .split(',')
       .map(title => title.trim())
-      .filter(title => title.length > 0);
+      .filter(title => title.length > 0)
+      .slice(0, 5); // Asegurar máximo 5 recomendaciones
+
+    console.log(`🎬 Recomendaciones procesadas (${recommendations.length}):`, recommendations);
+
+    // Verificar que tengamos recomendaciones
+    if (recommendations.length === 0) {
+      console.error('❌ No se generaron recomendaciones');
+      return res.status(500).json({
+        error: 'No se pudieron generar recomendaciones',
+        code: 'NO_RECOMMENDATIONS_GENERATED'
+      });
+    }
 
     res.json({
       success: true,
       data: recommendations,
+      count: recommendations.length,
+      model_used: 'llama-3.3-70b-versatile',
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('Error en recomendaciones:', error.message);
-    res.status(500).json({
-      error: 'Error interno del servidor',
-      code: 'RECOMMENDATIONS_ERROR'
+    console.error('❌ Error en recomendaciones:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
     });
-  }
-});
-
-// Endpoint para obtener signature dinámico
-app.get('/api/signature', (req, res) => {
-  try {
-    const signature = process.env.APP_SIGNATURE || 'randomovie_2024_secure_signature';
     
-    res.json({
-      success: true,
-      signature: signature,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Error obteniendo signature:', error.message);
-    res.status(500).json({
-      error: 'Error interno del servidor',
-      code: 'SIGNATURE_ERROR'
-    });
-  }
-});
-
-// Endpoint de prueba para un ID de película específico
-app.get('/api/debug/providers/:id', validateAppSignature, async (req, res) => {
-  try {
-    const { id } = req.params;
+    // Proporcionar más detalles del error
+    const errorDetails = error.response?.data?.error || error.message;
     
-    if (!process.env.TMDB_API_KEY) {
-      return res.status(500).json({
-        error: 'API key de TMDB no configurada'
-      });
-    }
-
-    // Probar con una película popular para debug
-    const testResponse = await axios.get(`https://api.themoviedb.org/3/movie/${id}/watch/providers`, {
-      params: {
-        api_key: process.env.TMDB_API_KEY
-      }
-    });
-
-    res.json({
-      movieId: id,
-      rawResponse: testResponse.data,
-      hasResults: !!testResponse.data.results,
-      regionCount: Object.keys(testResponse.data.results || {}).length,
-      availableRegions: Object.keys(testResponse.data.results || {}),
-      esData: testResponse.data.results?.ES || null,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    res.status(500).json({ 
-      error: error.message,
-      details: error.response?.data 
+    res.status(500).json({
+      error: 'Error al generar recomendaciones',
+      code: 'RECOMMENDATIONS_ERROR',
+      details: errorDetails
     });
   }
 });
