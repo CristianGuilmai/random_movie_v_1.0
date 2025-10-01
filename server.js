@@ -554,7 +554,7 @@ app.post('/api/movies/random', validateAppSignature, async (req, res) => {
       language: language,
       with_genres: genres.join(','),
       sort_by: 'popularity.desc',
-      vote_count.gte: minVotes,
+      'vote_count.gte': minVotes,
       include_adult: excludeAdult ? 'false' : 'true'
     };
 
