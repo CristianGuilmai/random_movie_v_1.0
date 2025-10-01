@@ -204,17 +204,26 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
       timeout: 10000
     });
 
-    console.log(`🎬 Películas próximas encontradas: ${response.data.results.length}`);
+    // Filtrar adicionalmente en el servidor para asegurar solo fechas futuras
+    const today = new Date();
+    const filteredResults = response.data.results.filter(movie => {
+      if (!movie.release_date) return false;
+      const releaseDate = new Date(movie.release_date);
+      return releaseDate > today; // Solo fechas posteriores a hoy
+    });
+
+    console.log(`🎬 Películas encontradas: ${response.data.results.length}, filtradas: ${filteredResults.length}`);
 
     res.json({
       success: true,
-      data: response.data.results,
+      data: filteredResults,
       timestamp: new Date().toISOString(),
       filters_applied: {
         release_types: '2|3 (teatral y digital)',
         date_range: `${minDate} a ${maxDate}`,
         sort_by: 'popularity.desc',
-        min_votes: 10
+        min_votes: 10,
+        server_filter: 'Solo fechas futuras'
       }
     });
 
