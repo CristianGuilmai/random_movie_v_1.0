@@ -86,7 +86,7 @@ app.get('/', (req, res) => {
 // Películas en cartelera
 app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
   try {
-    const { page = 1, language = 'es-ES' } = req.query;
+    const { page = 1, language = 'es-ES', include_adult = 'true' } = req.query;
 
     if (!process.env.TMDB_API_KEY) {
       return res.status(500).json({
@@ -99,7 +99,8 @@ app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
       params: {
         api_key: process.env.TMDB_API_KEY,
         language: language,
-        page: page
+        page: page,
+        include_adult: include_adult === 'true'
       },
       timeout: 10000
     });
@@ -127,7 +128,7 @@ app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
 // Películas trending
 app.get('/api/movies/trending', validateAppSignature, async (req, res) => {
   try {
-    const { page = 1, language = 'es-ES' } = req.query;
+    const { page = 1, language = 'es-ES', include_adult = 'true' } = req.query;
 
     if (!process.env.TMDB_API_KEY) {
       return res.status(500).json({
@@ -140,7 +141,8 @@ app.get('/api/movies/trending', validateAppSignature, async (req, res) => {
       params: {
         api_key: process.env.TMDB_API_KEY,
         language: language,
-        page: page
+        page: page,
+        include_adult: include_adult === 'true'
       },
       timeout: 10000
     });
@@ -168,7 +170,7 @@ app.get('/api/movies/trending', validateAppSignature, async (req, res) => {
 // Próximos estrenos
 app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
   try {
-    const { page = 1, language = 'es-ES' } = req.query;
+    const { page = 1, language = 'es-ES', include_adult = 'true' } = req.query;
 
     if (!process.env.TMDB_API_KEY) {
       return res.status(500).json({
@@ -185,6 +187,7 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
         'release_date.gte': new Date().toISOString().split('T')[0],
         'release_date.lte': new Date(Date.now() + 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         sort_by: 'popularity.desc',
+        include_adult: include_adult === 'true',
         page: page
       },
       timeout: 10000
@@ -647,7 +650,7 @@ app.post('/api/people/search', validateAppSignature, async (req, res) => {
         language: language,
         query: query,
         page: page,
-        include_adult: false
+        include_adult: true
       },
       timeout: 10000
     });
@@ -889,7 +892,7 @@ Responde SOLO en JSON válido sin markdown ni formato adicional:
           api_key: process.env.TMDB_API_KEY,
           language: language,
           query: analysis.corrected,
-          include_adult: false
+          include_adult: true
         },
         timeout: 10000
       });
@@ -925,7 +928,7 @@ Responde SOLO en JSON válido sin markdown ni formato adicional:
           api_key: process.env.TMDB_API_KEY,
           language: language,
           query: analysis.corrected,
-          include_adult: false
+          include_adult: true
         },
         timeout: 10000
       });
@@ -1003,7 +1006,7 @@ app.get('/api/movies/:id', validateAppSignature, async (req, res) => {
 // Búsqueda de películas
 app.post('/api/movies/search', validateAppSignature, async (req, res) => {
   try {
-    const { query, language = 'es-ES', page = 1 } = req.body;
+    const { query, language = 'es-ES', page = 1, include_adult = true } = req.body;
 
     if (!query || query.trim().length === 0) {
       return res.status(400).json({
@@ -1025,7 +1028,7 @@ app.post('/api/movies/search', validateAppSignature, async (req, res) => {
         language: language,
         query: query,
         page: page,
-        include_adult: false
+        include_adult: include_adult
       },
       timeout: 10000
     });
