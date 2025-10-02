@@ -4,11 +4,69 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const crypto = require('crypto');
+const redis = require('redis');
 require('dotenv').config({ path: './config.env' });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 console.log('🚀 Servidor iniciando con endpoints actualizados...');
+
+// ===== CONFIGURACIÓN DE REDIS CACHE =====
+let redisClient;
+const CACHE_TTL = 3600; // 1 hora en segundos
+
+// Inicializar Redis (opcional, fallback a memoria si no está disponible)
+const initRedis = async () => {
+  try {
+    if (process.env.REDIS_URL) {
+      redisClient = redis.createClient({
+        url: process.env.REDIS_URL
+      });
+      await redisClient.connect();
+      console.log('✅ Redis conectado exitosamente');
+    } else {
+      console.log('⚠️ Redis no configurado, usando cache en memoria');
+    }
+  } catch (error) {
+    console.log('⚠️ Redis no disponible, usando cache en memoria:', error.message);
+  }
+};
+
+// Cache en memoria como fallback
+const memoryCache = new Map();
+
+// Función para obtener datos del cache
+const getFromCache = async (key) => {
+  try {
+    if (redisClient && redisClient.isOpen) {
+      const cached = await redisClient.get(key);
+      return cached ? JSON.parse(cached) : null;
+    } else {
+      return memoryCache.get(key) || null;
+    }
+  } catch (error) {
+    console.log('❌ Error obteniendo del cache:', error.message);
+    return null;
+  }
+};
+
+// Función para guardar datos en el cache
+const setCache = async (key, data, ttl = CACHE_TTL) => {
+  try {
+    if (redisClient && redisClient.isOpen) {
+      await redisClient.setEx(key, ttl, JSON.stringify(data));
+    } else {
+      memoryCache.set(key, data);
+      // Limpiar cache en memoria después del TTL
+      setTimeout(() => memoryCache.delete(key), ttl * 1000);
+    }
+  } catch (error) {
+    console.log('❌ Error guardando en cache:', error.message);
+  }
+};
+
+// Inicializar Redis al arrancar
+initRedis();
 
 // ===== MIDDLEWARE =====
 // Middleware de seguridad
@@ -95,6 +153,23 @@ app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
       });
     }
 
+    // Crear clave de cache única
+    const cacheKey = `now_playing:${language}:${page}:${include_adult}`;
+    
+    // Intentar obtener del cache primero
+    const cachedData = await getFromCache(cacheKey);
+    if (cachedData) {
+      console.log('📦 Cache HIT para now-playing');
+      return res.json({
+        success: true,
+        data: cachedData.data,
+        pagination: cachedData.pagination,
+        timestamp: new Date().toISOString(),
+        cached: true
+      });
+    }
+    
+    console.log('🌐 Cache MISS, llamando a TMDB para now-playing');
     const response = await axios.get('https://api.themoviedb.org/3/movie/now_playing', {
       params: {
         api_key: process.env.TMDB_API_KEY,
@@ -105,6 +180,19 @@ app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
       timeout: 10000
     });
 
+    const data = {
+      data: response.data.results,
+      pagination: {
+        page: response.data.page,
+        total_pages: response.data.total_pages,
+        total_results: response.data.total_results
+      }
+    };
+    
+    // Guardar en cache
+    await setCache(cacheKey, data);
+    console.log('💾 Datos guardados en cache para now-playing');
+
     res.json({
       success: true,
       data: response.data.results,
@@ -113,7 +201,8 @@ app.get('/api/movies/now-playing', validateAppSignature, async (req, res) => {
         total_pages: response.data.total_pages,
         total_results: response.data.total_results
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      cached: false
     });
 
   } catch (error) {
