@@ -31,8 +31,8 @@ app.use(cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 requests por ventana
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   message: {
     error: 'Demasiadas solicitudes, intenta más tarde',
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
@@ -206,6 +206,415 @@ app.get('/api/movies/upcoming', validateAppSignature, async (req, res) => {
     res.status(500).json({
       error: 'Error interno del servidor',
       code: 'UPCOMING_ERROR'
+    });
+  }
+});
+
+// ===== NUEVOS ENDPOINTS: CAST, CREW Y CREDITS =====
+
+// Obtener reparto completo (cast y crew)
+app.get('/api/movies/:id/credits', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES' } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎬 Obteniendo credits para película ID: ${id}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}/credits`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    res.json({
+      success: true,
+      data: {
+        id: response.data.id,
+        cast: response.data.cast || [],
+        crew: response.data.crew || []
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo credits:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'CREDITS_ERROR',
+      details: error.message
+    });
+  }
+});
+
+// Obtener solo el cast (actores)
+app.get('/api/movies/:id/cast', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES', limit = 20 } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`👥 Obteniendo cast para película ID: ${id}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}/credits`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    const cast = response.data.cast || [];
+    const limitedCast = limit ? cast.slice(0, parseInt(limit)) : cast;
+
+    res.json({
+      success: true,
+      data: limitedCast,
+      count: limitedCast.length,
+      total: cast.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo cast:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'CAST_ERROR',
+      details: error.message
+    });
+  }
+});
+
+// Obtener solo el crew (equipo técnico)
+app.get('/api/movies/:id/crew', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES', department } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎥 Obteniendo crew para película ID: ${id}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}/credits`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    let crew = response.data.crew || [];
+
+    // Filtrar por departamento si se especifica
+    if (department) {
+      crew = crew.filter(member => 
+        member.department?.toLowerCase() === department.toLowerCase()
+      );
+    }
+
+    res.json({
+      success: true,
+      data: crew,
+      count: crew.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo crew:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'CREW_ERROR',
+      details: error.message
+    });
+  }
+});
+
+// ===== NUEVO ENDPOINT: PROVEEDORES DE STREAMING =====
+
+// Obtener proveedores de streaming
+app.get('/api/movies/:id/providers', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { country = 'US' } = req.query; // US por defecto, puedes cambiarlo a 'CL' para Chile
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`📺 Obteniendo proveedores para película ID: ${id}, país: ${country}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}/watch/providers`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY
+      },
+      timeout: 10000
+    });
+
+    const results = response.data.results || {};
+    const countryData = results[country.toUpperCase()] || null;
+
+    res.json({
+      success: true,
+      data: {
+        id: response.data.id,
+        country: country.toUpperCase(),
+        providers: countryData,
+        available_countries: Object.keys(results)
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo proveedores:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'PROVIDERS_ERROR',
+      details: error.message
+    });
+  }
+});
+
+// ===== NUEVO ENDPOINT: VIDEOS/TRAILERS =====
+
+// Obtener videos y trailers
+app.get('/api/movies/:id/videos', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES' } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎞️ Obteniendo videos para película ID: ${id}`);
+
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}/videos`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language
+      },
+      timeout: 10000
+    });
+
+    const videos = response.data.results || [];
+    
+    // Separar por tipo
+    const trailers = videos.filter(v => v.type === 'Trailer');
+    const teasers = videos.filter(v => v.type === 'Teaser');
+    const clips = videos.filter(v => v.type === 'Clip');
+    const featurettes = videos.filter(v => v.type === 'Featurette');
+
+    res.json({
+      success: true,
+      data: {
+        id: response.data.id,
+        all_videos: videos,
+        trailers: trailers,
+        teasers: teasers,
+        clips: clips,
+        featurettes: featurettes,
+        total_count: videos.length
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo videos:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'VIDEOS_ERROR',
+      details: error.message
+    });
+  }
+});
+
+// ===== ENDPOINT COMBINADO (OPTIMIZADO) =====
+
+// Obtener detalles completos de película (incluye todo en una llamada)
+app.get('/api/movies/:id/complete', validateAppSignature, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { language = 'es-ES', country = 'US' } = req.query;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ 
+        error: 'ID de película inválido',
+        code: 'INVALID_MOVIE_ID'
+      });
+    }
+
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(500).json({
+        error: 'API key de TMDB no configurada',
+        code: 'TMDB_API_KEY_MISSING'
+      });
+    }
+
+    console.log(`🎬 Obteniendo información completa para película ID: ${id}`);
+
+    // Usar append_to_response para obtener todo en una sola llamada
+    const response = await axios.get(`https://api.themoviedb.org/3/movie/${id}`, {
+      params: {
+        api_key: process.env.TMDB_API_KEY,
+        language: language,
+        append_to_response: 'credits,videos,watch/providers,images,recommendations,similar'
+      },
+      timeout: 15000
+    });
+
+    const data = response.data;
+    const providers = data['watch/providers']?.results?.[country.toUpperCase()] || null;
+
+    res.json({
+      success: true,
+      data: {
+        // Información básica
+        id: data.id,
+        title: data.title,
+        original_title: data.original_title,
+        overview: data.overview,
+        poster_path: data.poster_path,
+        backdrop_path: data.backdrop_path,
+        release_date: data.release_date,
+        runtime: data.runtime,
+        vote_average: data.vote_average,
+        vote_count: data.vote_count,
+        popularity: data.popularity,
+        genres: data.genres,
+        
+        // Cast y Crew
+        cast: data.credits?.cast?.slice(0, 20) || [],
+        crew: data.credits?.crew || [],
+        director: data.credits?.crew?.find(person => person.job === 'Director'),
+        
+        // Videos
+        trailers: data.videos?.results?.filter(v => v.type === 'Trailer') || [],
+        all_videos: data.videos?.results || [],
+        
+        // Proveedores
+        streaming_providers: providers,
+        
+        // Recomendaciones
+        recommendations: data.recommendations?.results?.slice(0, 10) || [],
+        similar: data.similar?.results?.slice(0, 10) || []
+      },
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo información completa:', error.message);
+    
+    if (error.response?.status === 404) {
+      return res.status(404).json({
+        error: 'Película no encontrada',
+        code: 'MOVIE_NOT_FOUND'
+      });
+    }
+
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'COMPLETE_INFO_ERROR',
+      details: error.message
     });
   }
 });
@@ -532,7 +941,7 @@ Responde SOLO en JSON válido sin markdown ni formato adicional:
         correctedQuery: analysis.corrected,
         explanation: analysis.explanation || `¿Te refieres a "${analysis.corrected}"?`,
         type: searchType,
-        results: results.slice(0, 50), // Máximo 50 resultados
+        results: results.slice(0, 50),
         count: results.length
       },
       timestamp: new Date().toISOString()
@@ -818,6 +1227,12 @@ const server = app.listen(PORT, () => {
   console.log(`   - GET  /api/movies/trending`);
   console.log(`   - GET  /api/movies/upcoming`);
   console.log(`   - GET  /api/movies/:id`);
+  console.log(`   - GET  /api/movies/:id/complete (NUEVO - Todo en 1)`);
+  console.log(`   - GET  /api/movies/:id/credits (NUEVO)`);
+  console.log(`   - GET  /api/movies/:id/cast (NUEVO)`);
+  console.log(`   - GET  /api/movies/:id/crew (NUEVO)`);
+  console.log(`   - GET  /api/movies/:id/providers (NUEVO)`);
+  console.log(`   - GET  /api/movies/:id/videos (NUEVO)`);
   console.log(`   - POST /api/movies/search`);
   console.log(`   - POST /api/movies/random`);
   console.log(`   - POST /api/people/search`);
